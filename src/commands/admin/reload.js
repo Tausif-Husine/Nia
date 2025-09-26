@@ -2,12 +2,13 @@ const path = require('path');
 
 module.exports = {
   name: 'reload',
-  description: 'Reload all commands & events (owner only).',
+  description: 'Reload config, commands & events (owner only)',
   ownerOnly: true,
-  async execute(interaction, client) {
-    await interaction.deferReply({ ephemeral: true });
+  async execute(ctx, client) {
+    // owner check is handled by interaction/message handlers
+    await ctx.deferReply();
     try {
-      // reload config first
+      // reload config.json
       delete require.cache[require.resolve(path.join(__dirname, '../../../config.json'))];
       client.config = require(path.join(__dirname, '../../../config.json'));
 
@@ -15,10 +16,10 @@ module.exports = {
       await client.commandHandler.registerCommands();
       await client.eventHandler.loadEvents();
 
-      return interaction.editReply({ content: '✅ Reloaded config, commands & events.' });
+      await ctx.editReply('✅ Reloaded config, commands & events.');
     } catch (err) {
-      console.error('Manual reload failed:', err);
-      return interaction.editReply({ content: `❌ Reload failed: ${err.message}` });
+      console.error('Reload failed:', err);
+      await ctx.editReply(`❌ Reload failed: ${err.message}`);
     }
   }
 };

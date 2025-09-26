@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const chokidar = require('chokidar');
+const logger = require('../utils/logger');
 
 module.exports = (client) => {
   const eventsPath = path.join(__dirname, '..', 'events');
@@ -29,7 +30,7 @@ module.exports = (client) => {
         const evt = require(f);
 
         if (!evt || !evt.name || typeof evt.execute !== 'function') {
-          console.warn(`Skipping invalid event file: ${f}`);
+          logger.warn(`Skipping invalid event file: ${f}`);
           continue;
         }
 
@@ -40,11 +41,11 @@ module.exports = (client) => {
 
         boundListeners.set(evt.name, listener);
       } catch (err) {
-        console.error(`Failed loading event ${f}:`, err);
+        logger.error(`Failed loading event ${f}:`, err);
       }
     }
 
-    console.log(`Loaded ${boundListeners.size} events.`);
+    logger.info(`Loaded ${boundListeners.size} events.`);
   }
 
   function watchEvents() {
@@ -53,9 +54,9 @@ module.exports = (client) => {
     const doReload = async () => {
       try {
         await loadEvents();
-        console.log('Hot-reloaded events.');
+        logger.info('Hot-reloaded events.');
       } catch (err) {
-        console.error('Event hot-reload failed:', err);
+        logger.error('Event hot-reload failed:', err);
       }
     };
     watcher.on('all', () => {

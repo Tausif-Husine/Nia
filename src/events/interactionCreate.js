@@ -1,4 +1,5 @@
 const { Collection, PermissionsBitField } = require('discord.js');
+const { createCtxForInteraction } = require('../utils/respond');
 
 module.exports = {
   name: 'interactionCreate',
@@ -8,8 +9,11 @@ module.exports = {
     const command = client.commands.get(interaction.commandName);
     if (!command) return interaction.reply({ content: 'Command not found.', ephemeral: true });
 
-    // Owner check
-    if (command.ownerOnly && interaction.user.id !== client.config.ownerId) {
+    // owner key compatibility: support ownerId or ownerID
+    const ownerId = (client.config && (client.config.ownerId || client.config.ownerID)) || null;
+
+    // Owner-only
+    if (command.ownerOnly && interaction.user.id !== ownerId) {
       return interaction.reply({ content: 'You cannot use this command.', ephemeral: true });
     }
 
@@ -22,7 +26,7 @@ module.exports = {
     if (command.permissions && command.permissions.length) {
       const member = interaction.member;
       if (!member.permissions.has(PermissionsBitField.resolve(command.permissions))) {
-        return interaction.reply({ content: 'You do not have the required permissions.', ephemeral: true });
+        return interaction.reply({ content: 'You do not have the required permissions to run this command.', ephemeral: true });
       }
     }
 
@@ -34,11 +38,10 @@ module.exports = {
       }
     }
 
-    // Cooldowns
+    // Cooldown
     const now = Date.now();
     const timestamps = client.cooldowns.get(command.name) || new Collection();
     const cooldownAmount = (command.cooldown || 3) * 1000;
-
     if (timestamps.has(interaction.user.id)) {
       const expiration = timestamps.get(interaction.user.id) + cooldownAmount;
       if (now < expiration) {
@@ -50,9 +53,22 @@ module.exports = {
     client.cooldowns.set(command.name, timestamps);
     setTimeout(() => timestamps.delete(interaction.user.id), cooldownAmount);
 
-    // Execute command
+    // Build args from options (order follows command.options if present)
+    let args = [];
+    if (Array.isArray(command.options) && command.options.length) {
+      args = command.options.map(opt => {
+        const val = interaction.options.get(opt.name);
+        return val ? val.value : null;
+      });
+    } else {
+      args = interaction.options.data.map(d => d.value);
+    }
+
+    // Context wrapper
+    const ctx = createCtxForInteraction(interaction);
+
     try {
-      await command.execute(interaction, client);
+      await command.execute(ctx, client, args);
     } catch (err) {
       console.error(`Error executing ${command.name}:`, err);
       if (interaction.replied || interaction.deferred) {

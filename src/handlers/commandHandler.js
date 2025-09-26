@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { REST, Routes } = require('discord.js');
 const chokidar = require('chokidar');
+const logger = require('../utils/logger');
 
 module.exports = (client) => {
   const commandsPath = path.join(__dirname, '..', 'commands');
@@ -19,6 +20,7 @@ module.exports = (client) => {
 
   async function loadCommands() {
     client.commands.clear();
+    client.textCommands = new Map();
     const files = listFiles(commandsPath);
     const slashCommands = [];
 
@@ -28,29 +30,36 @@ module.exports = (client) => {
         const command = require(file);
 
         if (!command || !command.name || typeof command.execute !== 'function') {
-          console.warn(`Skipping invalid command file: ${file}`);
+          logger.warn(`Skipping invalid command file: ${file}`);
           continue;
         }
 
         client.commands.set(command.name, command);
+
+        // text trigger mapping: map by lowercase name and optional aliases
+        client.textCommands.set(command.name.toLowerCase(), command);
+        if (Array.isArray(command.aliases)) {
+          for (const a of command.aliases) client.textCommands.set(a.toLowerCase(), command);
+        }
+
         slashCommands.push({
           name: command.name,
           description: command.description || 'No description',
           options: command.options || []
         });
       } catch (err) {
-        console.error(`Error loading command ${file}:`, err);
+        logger.error(`Error loading command ${file}:`, err);
       }
     }
 
     registeredCommands = slashCommands;
-    console.log(`Loaded ${client.commands.size} commands.`);
+    logger.info(`Loaded ${client.commands.size} commands.`);
     return registeredCommands;
   }
 
   async function registerCommands() {
-    if (!client.config.clientId) {
-      console.warn('clientId not set; skipping command registration.');
+    if (!client.config || !client.config.clientId) {
+      logger.warn('clientId not set; skipping command registration.');
       return;
     }
 
@@ -62,39 +71,36 @@ module.exports = (client) => {
           Routes.applicationGuildCommands(client.config.clientId, client.config.devGuildId),
           { body: registeredCommands }
         );
-        console.log('Registered commands to DEV guild:', client.config.devGuildId);
+        logger.info('Registered commands to DEV guild:', client.config.devGuildId);
       } else {
         await rest.put(
           Routes.applicationCommands(client.config.clientId),
           { body: registeredCommands }
         );
-        console.log('Registered global application commands.');
+        logger.info('Registered global application commands.');
       }
     } catch (err) {
-      console.error('Failed to register commands:', err);
+      logger.error('Failed to register commands:', err);
       throw err;
     }
   }
 
   function watchCommands() {
     const watcher = chokidar.watch(commandsPath, { ignoreInitial: true });
-
     let timeout = null;
     const doReload = async () => {
       try {
         await loadCommands();
         await registerCommands();
-        console.log('Hot-reloaded commands.');
+        logger.info('Hot-reloaded commands.');
       } catch (err) {
-        console.error('Hot-reload failed:', err);
+        logger.error('Hot-reload failed:', err);
       }
     };
-
     watcher.on('all', () => {
       clearTimeout(timeout);
       timeout = setTimeout(doReload, 250);
     });
-
     return watcher;
   }
 
